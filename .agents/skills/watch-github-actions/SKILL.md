@@ -151,6 +151,16 @@ the `release-tag-v1` qualification profile. Failed qualification prevents stable
 publication but still allows pre-release artifacts to publish with the failure
 recorded.
 
+For `Codex Compatibility Review`, inspect its job summary and the
+`compatibility-review-run-<run-id>-attempt-<attempt>` artifact. Confirm the
+candidate and baseline SHAs before interpreting findings. `complete` describes
+execution and coverage, not compatibility: also read the assessment and findings.
+An `error`, incomplete coverage, or missing artifact means no clean review is
+available. The job is advisory and independent of publication gates; the
+qualification summary points to it without waiting for completion. Do not
+rerun Release Tag to debug this reviewer. Use its dedicated manual workflow
+with an existing candidate tag; that path does not publish release artifacts.
+
 View logs for a specific run:
 
 ```bash

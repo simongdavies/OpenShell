@@ -18,6 +18,7 @@ depends = [
   "test:packaging-assets",
   "test:qualification-summary",
   "test:codex-security-release-range",
+  "test:codex-compatibility",
   "test:docs-website",
   "test:docs-nav",
 ]
@@ -76,6 +77,11 @@ hide = true
 ["test:codex-security-release-range"]
 description = "Test Codex Security release-range resolution"
 run = "uv run --no-project --with pytest pytest -o \"python_files=*_test.py\" tasks/scripts/codex_security_range_test.py"
+hide = true
+
+["test:codex-compatibility"]
+description = "Test advisory release compatibility review without inference"
+run = "uv run --no-project --with pytest --with pytest-asyncio pytest tasks/scripts/codex_compatibility_test.py"
 hide = true
 
 [e2e]

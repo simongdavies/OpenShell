@@ -492,7 +492,7 @@ stopped or completed. Starting a retained `Completed` or
 invalidates SSH sessions from the previous runtime generation. Delete remains
 the operation that removes retained state.
 
-For an infrastructure `Error` on a backend that supports restarting stopped sandboxes, repair the reported cause and run `sandbox stop` before `sandbox start`. Wait for stop to complete; it retains the workspace and clears sessions before relaunch. A failed or uncertain stop must be retried. Do not promise recovery of deleted backend resources or storage. For provisioning timeouts, keep the existing direct-start path after timeout cleanup completes; stop must not interrupt cleanup. Pending driver operations block recovery until they settle.
+For an infrastructure `Error` on a backend that supports restarting stopped sandboxes, fix the reported cause, run `sandbox stop`, and wait for it to succeed before running `sandbox start`. This retains the sandbox and persistent workspace but cannot recover deleted resources or storage. For a provisioning timeout, wait for cleanup to finish, then run `sandbox start` directly.
 
 ---
 

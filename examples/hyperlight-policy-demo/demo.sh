@@ -40,11 +40,6 @@ if [ ! -c /dev/kvm ] || [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
   echo "ERROR: readable and writable /dev/kvm is required; no fallback backend is used." >&2
   exit 2
 fi
-if [ "$(sysctl -n kernel.unprivileged_bpf_disabled 2>/dev/null || echo 2)" != "0" ]; then
-  echo "ERROR: OpenShell's Kubernetes TCP boundary requires kernel.unprivileged_bpf_disabled=0." >&2
-  echo "       Set it explicitly for this development host; the demo will not weaken the boundary." >&2
-  exit 2
-fi
 if ! docker info >/dev/null 2>&1; then
   echo "ERROR: a reachable Linux Docker daemon is required." >&2
   exit 2
@@ -70,7 +65,6 @@ kind create cluster \
   --config "${ROOT}/examples/hyperlight-policy-demo/kind-config.yaml"
 
 NODE=$(kind get nodes --name "${CLUSTER_NAME}" | head -n 1)
-docker exec "${NODE}" sysctl -w kernel.unprivileged_bpf_disabled=0
 docker exec "${NODE}" mkdir -p /var/run/cdi
 docker exec "${NODE}" sed -i \
   '/\[plugins."io.containerd.grpc.v1.cri"\]/a\    enable_cdi = true\n    cdi_spec_dirs = ["/var/run/cdi", "/etc/cdi"]' \
@@ -111,7 +105,8 @@ if [ -z "${capacity}" ] || [ "${capacity}" = "0" ]; then
   exit 1
 fi
 HOST_GATEWAY_IP=$(docker network inspect kind \
-  --format '{{(index .IPAM.Config 0).Gateway}}')
+  --format '{{range .IPAM.Config}}{{println .Gateway}}{{end}}' |
+  awk 'NF && index($0, ":") == 0 { print; exit }')
 test -n "${HOST_GATEWAY_IP}"
 
 uv run --no-project python "${ROOT}/examples/hyperlight-policy-demo/fixture.py" \

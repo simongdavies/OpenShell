@@ -99,6 +99,15 @@ def test_demo_pins_device_plugin_source() -> None:
     assert "hyperlight.dev/hypervisor" in demo
 
 
+def test_launchers_select_an_ipv4_fixture_gateway() -> None:
+    for launcher in ["demo.sh", "local-demo.sh"]:
+        script = (EXAMPLE / launcher).read_text(encoding="utf-8")
+
+        assert "range .IPAM.Config" in script
+        assert 'index($0, ":") == 0' in script
+        assert "index .IPAM.Config 0" not in script
+
+
 def test_runner_asserts_required_security_evidence() -> None:
     runner = (EXAMPLE / "run-demo.sh").read_text(encoding="utf-8")
 

@@ -71,7 +71,8 @@ for _ in $(seq 1 100); do
 done
 test -s "${READY_FILE}"
 HOST_GATEWAY_IP=$(docker network inspect bridge \
-  --format '{{(index .IPAM.Config 0).Gateway}}')
+  --format '{{range .IPAM.Config}}{{println .Gateway}}{{end}}' |
+  awk 'NF && index($0, ":") == 0 { print; exit }')
 test -n "${HOST_GATEWAY_IP}"
 
 read -r ALLOWED_PORT INNER_DENIED_PORT OUTER_DENIED_PORT < <(

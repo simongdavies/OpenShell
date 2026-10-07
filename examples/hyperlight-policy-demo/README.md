@@ -17,18 +17,21 @@ escape therefore lands in an already constrained OpenShell workload process.
 - Docker with a Linux daemon
 - `kind`, `kubectl`, `helm`, `mise`, and the repository development tools
 - Sufficient host inotify capacity for kind
-- `kernel.unprivileged_bpf_disabled=0` so the non-root OpenShell sandbox can
-  attach its loopback-rejection socket filter
 - Network access while building images and fetching the pinned Python-shell
   rootfs
 
 The example fails when KVM or the Kubernetes device allocation is unavailable.
 It never substitutes QEMU or another backend.
 
-WSL currently returns `EPERM` for the Kubernetes TCP-boundary socket filter
-even after the sysctl is set. Use native Linux for the kind lane. The local
-Docker lane uses OpenShell's authenticated Unix boundary and works under WSL
-when KVM is available.
+Linux security fix
+[CVE-2026-53236](https://git.kernel.org/stable/c/3747de241a66ef2c7032d2cc2b826a47c5fa0f6a)
+requires `CAP_NET_ADMIN` for TCP `SO_ATTACH_FILTER`. OpenShell remains
+capability-free: its Kubernetes boundary rejects loopback/self-address peers
+immediately after `accept`, before TLS or handshake state, instead of attaching
+a classic socket filter. Kubernetes NetworkPolicy admits only supervisor Pods,
+and mTLS still binds the exact sandbox, generation, and Pod identity.
+
+The local Docker lane uses OpenShell's authenticated Unix boundary.
 
 ## Run
 
@@ -45,7 +48,7 @@ Docker-backed OpenShell gateway.
 
 ### kind
 
-On native Linux:
+Run the Kubernetes integration with:
 
 ```shell
 mise run example:hyperlight:kvm
@@ -80,11 +83,8 @@ port, an OpenShell `DENIED` event for the outer-denied port, and no OpenShell
 network event for the destination rejected by Unikraft before a host socket is
 opened.
 
-The local Docker lane is exercised by the repository's real KVM test. The kind
-lane uses the same image, policy, fixture, and assertions; on WSL it stops at
-OpenShell's capability-free TCP-boundary qualification because the WSL kernel
-rejects the required classic socket filter. This is not treated as equivalent
-to a native-Linux kind pass.
+The local Docker and kind lanes use the same image, policy, fixture, and
+assertions. Neither grants `CAP_NET_ADMIN` or privileged mode.
 
 ## Enforcement layers
 

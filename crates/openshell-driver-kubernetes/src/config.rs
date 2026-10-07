@@ -4,9 +4,7 @@
 pub use openshell_core::DynamicStringAllowlist as OperatorNamespaceAllowlist;
 use openshell_core::config;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::BTreeMap;
-#[cfg(test)]
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -160,6 +158,11 @@ pub struct KubernetesComputeConfig {
     pub allow_driver_config: bool,
     /// Operator-owned external attachment approval policy.
     pub resource_admission: openshell_core::resource_admission::ResourceAdmissionConfig,
+    /// Extended resource names that sandbox driver config may request.
+    ///
+    /// NVIDIA GPU resources retain their existing built-in exception. Every
+    /// other qualified resource name requires an exact operator allowlist entry.
+    pub allowed_extended_resources: BTreeSet<String>,
     /// How workspaces map to Kubernetes namespaces. `"shared"` (default)
     /// renders all sandboxes into `namespace`; `"managed"` creates per-workspace
     /// namespaces on demand; `"operator"` uses pre-provisioned namespaces.
@@ -330,6 +333,7 @@ impl Default for KubernetesComputeConfig {
             allow_driver_config: false,
             resource_admission:
                 openshell_core::resource_admission::ResourceAdmissionConfig::default(),
+            allowed_extended_resources: BTreeSet::new(),
             gateway_id: DEFAULT_GATEWAY_ID.to_string(),
             namespace: DEFAULT_K8S_NAMESPACE.to_string(),
             operator_namespace_label: None,
@@ -824,6 +828,20 @@ fn validate_provider_spiffe_workload_api_socket_path_value(
 mod tests {
     use super::*;
     use std::collections::BTreeMap as HashMap;
+
+    #[test]
+    fn extended_resource_allowlist_is_operator_configured() {
+        let default = KubernetesComputeConfig::default();
+        assert!(default.allowed_extended_resources.is_empty());
+
+        let configured: KubernetesComputeConfig =
+            toml::from_str("allowed_extended_resources = [\"hyperlight.dev/hypervisor\"]")
+                .expect("parse extended resource allowlist");
+        assert_eq!(
+            configured.allowed_extended_resources,
+            BTreeSet::from(["hyperlight.dev/hypervisor".to_string()])
+        );
+    }
 
     #[test]
     fn image_pull_policy_accepts_config_and_kubernetes_spellings() {

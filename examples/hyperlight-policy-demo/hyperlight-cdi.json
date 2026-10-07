@@ -1,0 +1,42 @@
+{
+  "cdiVersion": "0.6.0",
+  "kind": "hyperlight.dev/hypervisor",
+  "devices": [
+    {
+      "name": "kvm",
+      "containerEdits": {
+        "deviceNodes": [
+          {
+            "path": "/dev/kvm",
+            "type": "c",
+            "permissions": "rw",
+            "uid": 10001,
+            "gid": 10001
+          }
+        ],
+        "env": [
+          "HYPERLIGHT_HYPERVISOR=kvm",
+          "HYPERLIGHT_DEVICE_PATH=/dev/kvm"
+        ]
+      }
+    },
+    {
+      "name": "mshv",
+      "containerEdits": {
+        "deviceNodes": [
+          {
+            "path": "/dev/mshv",
+            "type": "c",
+            "permissions": "rw",
+            "uid": 10001,
+            "gid": 10001
+          }
+        ],
+        "env": [
+          "HYPERLIGHT_HYPERVISOR=mshv",
+          "HYPERLIGHT_DEVICE_PATH=/dev/mshv"
+        ]
+      }
+    }
+  ]
+}

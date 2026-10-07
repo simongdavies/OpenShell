@@ -1,0 +1,68 @@
+# Derived from hyperlight-dev/hyperlight-on-kubernetes commit
+# fc71b4501d23977fcc54f7be144d884fc8210667.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hyperlight-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hyperlight-device-plugin
+  namespace: hyperlight-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: hyperlight-device-plugin
+  namespace: hyperlight-system
+spec:
+  selector:
+    matchLabels:
+      app: hyperlight-device-plugin
+  template:
+    metadata:
+      labels:
+        app: hyperlight-device-plugin
+    spec:
+      serviceAccountName: hyperlight-device-plugin
+      nodeSelector:
+        hyperlight.dev/enabled: "true"
+      containers:
+        - name: device-plugin
+          image: openshell/hyperlight-device-plugin:fc71b450
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DEVICE_COUNT
+              value: "32"
+            - name: DEVICE_UID
+              value: "10001"
+            - name: DEVICE_GID
+              value: "10001"
+          securityContext:
+            privileged: false
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            runAsUser: 0
+          volumeMounts:
+            - name: device-plugin
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: cdi
+              mountPath: /var/run/cdi
+            - name: kvm
+              mountPath: /dev/kvm
+              readOnly: true
+      volumes:
+        - name: device-plugin
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+            type: Directory
+        - name: cdi
+          hostPath:
+            path: /var/run/cdi
+            type: DirectoryOrCreate
+        - name: kvm
+          hostPath:
+            path: /dev/kvm
+            type: CharDevice

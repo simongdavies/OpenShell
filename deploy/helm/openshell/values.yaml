@@ -404,6 +404,9 @@ server:
     kubernetes:
       # -- Allow caller driver JSON; external resources still require approval.
       allowDriverConfig: false
+      # Exact Kubernetes extended resources caller driver config may request.
+      # nvidia.com/gpu retains its built-in typed GPU path.
+      allowedExtendedResources: []
       resourceAdmission:
         # -- Require operator approval labels on external sandbox attachments (GPU attachments exempt).
         enabled: true

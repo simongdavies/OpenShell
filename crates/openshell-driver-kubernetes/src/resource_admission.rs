@@ -84,7 +84,12 @@ fn reference(refs: &mut BTreeSet<Reference>, kind: &'static str, name: Option<&s
     }
 }
 
-fn inventory(spec: &Value, private_secret: &str) -> Result<BTreeSet<Reference>, Status> {
+fn inventory(
+    spec: &Value,
+    private_secret: &str,
+    allowed_extended_resources: &BTreeSet<String>,
+) -> Result<BTreeSet<Reference>, Status> {
+    validate_extended_resources(spec, allowed_extended_resources)?;
     let deny = || {
         Status::failed_precondition("workload contains an unsupported external resource attachment")
     };
@@ -149,20 +154,37 @@ fn inventory(spec: &Value, private_secret: &str) -> Result<BTreeSet<Reference>, 
                     return Err(deny());
                 }
             }
-            for field in ["requests", "limits"] {
-                for (resource, _) in container["resources"][field]
+        }
+    }
+    Ok(refs)
+}
+
+pub(crate) fn validate_extended_resources(
+    spec: &Value,
+    allowed_extended_resources: &BTreeSet<String>,
+) -> Result<(), Status> {
+    for field in ["containers", "initContainers", "ephemeralContainers"] {
+        for container in spec[field].as_array().into_iter().flatten() {
+            for section in ["requests", "limits"] {
+                for resource in container["resources"][section]
                     .as_object()
                     .into_iter()
                     .flatten()
+                    .map(|(resource, _)| resource)
                 {
-                    if resource.contains('/') && resource != "nvidia.com/gpu" {
-                        return Err(deny());
+                    if resource.contains('/')
+                        && resource != "nvidia.com/gpu"
+                        && !allowed_extended_resources.contains(resource)
+                    {
+                        return Err(Status::failed_precondition(format!(
+                            "workload requests Kubernetes extended resource {resource:?}, which is not in allowed_extended_resources"
+                        )));
                     }
                 }
             }
         }
     }
-    Ok(refs)
+    Ok(())
 }
 
 /// Resolve references selected through the OpenShell-owned Pod template.
@@ -175,13 +197,15 @@ pub async fn admit(
     namespace: &str,
     spec: &Value,
     private_secret: &str,
+    allowed_extended_resources: &BTreeSet<String>,
 ) -> Result<Identities, Status> {
     policy.validate().map_err(Status::failed_precondition)?;
+    validate_extended_resources(spec, allowed_extended_resources)?;
     if !policy.enabled {
         return Ok(BTreeMap::new());
     }
     let mut identities = BTreeMap::new();
-    for reference in inventory(spec, private_secret)? {
+    for reference in inventory(spec, private_secret, allowed_extended_resources)? {
         let (group, version, plural, cluster) = match reference.kind {
             "PersistentVolumeClaim" => ("", "v1", "persistentvolumeclaims", false),
             "RuntimeClass" => ("node.k8s.io", "v1", "runtimeclasses", true),
@@ -325,6 +349,7 @@ mod tests {
                     "shared",
                     &spec,
                     "private",
+                    &BTreeSet::new(),
                 )
                 .await;
                 assert_eq!(result.is_ok(), allowed, "{result:?}");
@@ -392,6 +417,7 @@ mod tests {
                 "shared",
                 &spec,
                 "private",
+                &BTreeSet::new(),
             )
             .await
             .expect_err("lookup must fail");
@@ -442,6 +468,7 @@ mod tests {
             "shared",
             &spec,
             "private",
+            &BTreeSet::new(),
         )
         .await
         .expect_err("unlabelled RuntimeClass must be denied");
@@ -453,12 +480,57 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn extended_resource_allowlist_remains_active_when_label_admission_is_disabled() {
+        let client = Client::new(
+            tower::service_fn(|_request: http::Request<kube::client::Body>| async move {
+                Ok::<_, std::convert::Infallible>(
+                    http::Response::builder()
+                        .header("content-type", "application/json")
+                        .body(kube::client::Body::from(b"{}".to_vec()))
+                        .unwrap(),
+                )
+            }),
+            "shared",
+        );
+        let policy = ResourceAdmissionConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        let spec = serde_json::json!({
+            "automountServiceAccountToken": false,
+            "containers": [{
+                "resources": {
+                    "limits": {"hyperlight.dev/hypervisor": "1"}
+                }
+            }]
+        });
+
+        let error = admit(
+            &client,
+            &policy,
+            "team-a",
+            "shared",
+            &spec,
+            "private",
+            &BTreeSet::new(),
+        )
+        .await
+        .expect_err("disabled label admission must not bypass the extended resource allowlist");
+
+        assert!(
+            error
+                .message()
+                .contains("not in allowed_extended_resources")
+        );
+    }
+
     #[test]
     fn inventories_supported_external_resources() {
         let pod = serde_json::json!({"automountServiceAccountToken":false,"runtimeClassName":"r","priorityClassName":"p",
             "volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"gateway-db","readOnly":true}}],
             "imagePullSecrets":[{"name":"regcred"}]});
-        let refs = inventory(&pod, "private").unwrap();
+        let refs = inventory(&pod, "private", &BTreeSet::new()).unwrap();
         assert_eq!(refs.len(), 3);
         assert!(
             refs.iter()
@@ -472,13 +544,35 @@ mod tests {
     #[test]
     fn rejects_unsupported_volume_sources_but_allows_gpu() {
         for kind in ["hostPath", "csi", "projected", "image", "configMap"] {
-            assert!(inventory(&serde_json::json!({"automountServiceAccountToken":false,"volumes":[{"name":"x",kind:{}}]}), "private").is_err());
+            assert!(inventory(&serde_json::json!({"automountServiceAccountToken":false,"volumes":[{"name":"x",kind:{}}]}), "private", &BTreeSet::new()).is_err());
         }
-        assert!(inventory(&serde_json::json!({"automountServiceAccountToken":false,"volumes":[{"name":"x","secret":{"secretName":"external"}}]}), "private").is_err());
-        assert!(inventory(&serde_json::json!({"automountServiceAccountToken":false,"volumes":[{"name":"x","secret":{"secretName":"private"}}]}), "private").is_ok());
-        assert!(inventory(&serde_json::json!({"automountServiceAccountToken":false,"containers":[{"envFrom":[{"secretRef":{"name":"external"}}]}]}), "private").is_err());
-        assert!(inventory(&serde_json::json!({"automountServiceAccountToken":false,"containers":[{"env":[{"valueFrom":{"configMapKeyRef":{"name":"external"}}}]}]}), "private").is_err());
-        assert!(inventory(&serde_json::json!({"automountServiceAccountToken":false,"containers":[{"resources":{"limits":{"nvidia.com/gpu":"1"}}}]}), "private").is_ok());
+        assert!(inventory(&serde_json::json!({"automountServiceAccountToken":false,"volumes":[{"name":"x","secret":{"secretName":"external"}}]}), "private", &BTreeSet::new()).is_err());
+        assert!(inventory(&serde_json::json!({"automountServiceAccountToken":false,"volumes":[{"name":"x","secret":{"secretName":"private"}}]}), "private", &BTreeSet::new()).is_ok());
+        assert!(inventory(&serde_json::json!({"automountServiceAccountToken":false,"containers":[{"envFrom":[{"secretRef":{"name":"external"}}]}]}), "private", &BTreeSet::new()).is_err());
+        assert!(inventory(&serde_json::json!({"automountServiceAccountToken":false,"containers":[{"env":[{"valueFrom":{"configMapKeyRef":{"name":"external"}}}]}]}), "private", &BTreeSet::new()).is_err());
+        assert!(inventory(&serde_json::json!({"automountServiceAccountToken":false,"containers":[{"resources":{"limits":{"nvidia.com/gpu":"1"}}}]}), "private", &BTreeSet::new()).is_ok());
+    }
+
+    #[test]
+    fn extended_resources_require_exact_operator_allowlist_entry() {
+        let pod = serde_json::json!({
+            "automountServiceAccountToken": false,
+            "containers": [{
+                "resources": {
+                    "limits": {"hyperlight.dev/hypervisor": "1"}
+                }
+            }]
+        });
+
+        assert!(inventory(&pod, "private", &BTreeSet::new()).is_err());
+        assert!(
+            inventory(
+                &pod,
+                "private",
+                &BTreeSet::from(["hyperlight.dev/hypervisor".to_string()])
+            )
+            .is_ok()
+        );
     }
     #[test]
     fn legacy_and_forbidden_config_records_fail_closed() {

@@ -22,6 +22,8 @@
 #   SUPERVISOR_IMAGE=... (common test-wrapper override)
 #   OPENSHELL_SUPERVISOR_IMAGE=... (existing compatibility override)
 #   OPENSHELL_DOCKER_SUPERVISOR_IMAGE=... (Docker-specific override)
+# Hyperlight device passthrough:
+#   OPENSHELL_E2E_DOCKER_HYPERVISOR_DEVICE=1
 #
 # The default sandbox image uses a mutable tag. This wrapper refreshes it
 # before starting the gateway, while the Docker driver defaults to
@@ -124,6 +126,7 @@ DOCKER_NETWORK_NAME=""
 DOCKER_NETWORK_CONNECTED_CONTAINER=""
 DOCKER_NETWORK_MANAGED=0
 GPU_MODE="${OPENSHELL_E2E_DOCKER_GPU:-0}"
+HYPERVISOR_DEVICE_MODE="${OPENSHELL_E2E_DOCKER_HYPERVISOR_DEVICE:-0}"
 OIDC_MODE="${OPENSHELL_E2E_OIDC_GATEWAY:-0}"
 OIDC_ISSUER="${OPENSHELL_E2E_OIDC_ISSUER:-}"
 
@@ -623,6 +626,9 @@ GATEWAY_CONFIG="${STATE_DIR}/gateway.toml"
     printf 'default_image = %s\n'        "$(toml_string "${SANDBOX_IMAGE}")"
     printf 'image_pull_policy = %s\n'    "$(toml_string "${SANDBOX_IMAGE_PULL_POLICY}")"
     printf 'enable_bind_mounts = true\n'
+    if [ "${HYPERVISOR_DEVICE_MODE}" = "1" ]; then
+      printf 'enable_hypervisor_device = true\n'
+    fi
     printf 'sandbox_runtime_image = %s\n' "$(toml_string "${SANDBOX_RUNTIME_IMAGE}")"
     printf 'supervisor_image = %s\n'     "$(toml_string "${SUPERVISOR_IMAGE}")"
     printf '\n[openshell.drivers.docker.resource_admission]\n'
@@ -638,6 +644,9 @@ if [ "${OPENSHELL_E2E_EXTERNAL_COMPUTE_DRIVER:-0}" = "1" ]; then
     printf 'image_pull_policy = %s\n'    "$(toml_string "${SANDBOX_IMAGE_PULL_POLICY}")"
     printf 'guest_tls_ca = %s\n'         "$(toml_string "${PKI_DIR}/ca.crt")"
     printf 'enable_bind_mounts = true\n'
+    if [ "${HYPERVISOR_DEVICE_MODE}" = "1" ]; then
+      printf 'enable_hypervisor_device = true\n'
+    fi
     printf 'sandbox_runtime_image = %s\n' "$(toml_string "${SANDBOX_RUNTIME_IMAGE}")"
     printf 'supervisor_image = %s\n'     "$(toml_string "${SUPERVISOR_IMAGE}")"
   } >"${DRIVER_CONFIG}"

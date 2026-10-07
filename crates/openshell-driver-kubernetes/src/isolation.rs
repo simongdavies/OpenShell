@@ -127,7 +127,9 @@ impl KubernetesSandboxRuntimeNetworkFenceSpec {
                 policy_types: Some(vec!["Ingress".to_string(), "Egress".to_string()]),
                 // Any trusted OpenShell supervisor in this namespace may
                 // reach a sandbox listener. The Sandbox Protocol enforces the
-                // exact sandbox, generation, and Pod UID binding.
+                // exact sandbox, generation, and Pod UID binding. Same-pod
+                // traffic does not traverse Kubernetes NetworkPolicy, so the
+                // boundary also rejects loopback/self-address peers before TLS.
                 ingress: Some(vec![NetworkPolicyIngressRule {
                     from: Some(vec![NetworkPolicyPeer {
                         pod_selector: Some(LabelSelector {

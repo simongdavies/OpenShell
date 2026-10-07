@@ -192,6 +192,14 @@ struct Args {
     /// Allow sandbox requests to attach host bind mounts.
     #[arg(long, env = "OPENSHELL_ENABLE_BIND_MOUNTS", default_value_t = false)]
     enable_bind_mounts: bool,
+
+    /// Allow sandbox requests to select a fixed Hyperlight CDI device.
+    #[arg(
+        long,
+        env = "OPENSHELL_ENABLE_HYPERVISOR_DEVICE",
+        default_value_t = false
+    )]
+    enable_hypervisor_device: bool,
 }
 
 #[tokio::main]
@@ -245,6 +253,7 @@ async fn main() -> Result<()> {
         uidmap: args.uidmap,
         gidmap: args.gidmap,
         enable_bind_mounts: args.enable_bind_mounts,
+        enable_hypervisor_device: args.enable_hypervisor_device,
     })
     .await
     .into_diagnostic()?;

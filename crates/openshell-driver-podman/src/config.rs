@@ -95,6 +95,9 @@ pub struct PodmanComputeConfig {
     /// `template.driver_config`.
     #[serde(default)]
     pub enable_bind_mounts: bool,
+    /// Allow sandbox requests to select the fixed Hyperlight CDI device.
+    #[serde(default)]
+    pub enable_hypervisor_device: bool,
     /// Host path to a SPIFFE Workload API Unix socket exposed to sandbox
     /// supervisors for provider token exchange client assertions.
     pub provider_spiffe_workload_api_socket: Option<PathBuf>,
@@ -510,6 +513,7 @@ impl Default for PodmanComputeConfig {
             guest_tls_key: None,
             sandbox_pids_limit: openshell_core::config::default_sandbox_pids_limit(),
             enable_bind_mounts: false,
+            enable_hypervisor_device: false,
             provider_spiffe_workload_api_socket: None,
             app_armor_profile: None,
             health_check_interval_secs: None,
@@ -545,6 +549,7 @@ impl std::fmt::Debug for PodmanComputeConfig {
             .field("guest_tls_key", &self.guest_tls_key)
             .field("sandbox_pids_limit", &self.sandbox_pids_limit)
             .field("enable_bind_mounts", &self.enable_bind_mounts)
+            .field("enable_hypervisor_device", &self.enable_hypervisor_device)
             .field(
                 "provider_spiffe_workload_api_socket",
                 &self.provider_spiffe_workload_api_socket,
@@ -653,6 +658,7 @@ mod tests {
             Some(openshell_core::config::DEFAULT_SANDBOX_PIDS_LIMIT)
         );
         assert!(!cfg.enable_bind_mounts);
+        assert!(!cfg.enable_hypervisor_device);
     }
 
     #[test]

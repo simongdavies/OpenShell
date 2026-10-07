@@ -317,9 +317,14 @@ Driver config is disabled by default. These template and one-off
 resource admission: external attachments need administrator-controlled approval
 labels on the actual resources, not sandbox labels. GPU device attachments
 are temporarily exempt from labels; the public `--gpu` flag needs no driver
-config opt-in. Consult the published gateway configuration reference before
+config opt-in. Other Kubernetes extended resources require an exact operator
+entry in `allowed_extended_resources`. Consult the published gateway configuration reference before
 changing admission settings; do not recommend disabling admission to bypass a
 denial. Put driver config on a template only when it should be reused.
+
+Local Docker/Podman Hyperlight requests use the fixed
+`hypervisor_device: "kvm" | "mshv"` field and require the operator's
+`enable_hypervisor_device` opt-in. Never suggest an arbitrary host-device path.
 
 ### Manage sandbox workload templates
 

@@ -647,6 +647,12 @@ impl PodmanComputeDriver {
             .and_then(|requirements| driver_gpu_requirements(Some(requirements)));
         let driver_config = PodmanSandboxDriverConfig::from_sandbox(sandbox)?;
         driver_config.admit_mount_types(&self.config.resource_admission)?;
+        if driver_config.hypervisor_device.is_some() && !self.config.enable_hypervisor_device {
+            return Err(ComputeDriverError::Precondition(
+                "podman Hyperlight device access requires enable_hypervisor_device = true in gateway configuration"
+                    .to_string(),
+            ));
+        }
         Self::validate_gpu_request(gpu_requirements, &driver_config)?;
         self.validate_user_volume_mounts_available(sandbox).await?;
         let _ = self.resolve_gpu_cdi_devices(
@@ -2702,6 +2708,42 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("gpu count (2) must match driver_config.cdi_devices length (1)")
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_sandbox_rejects_hypervisor_device_without_operator_opt_in() {
+        let driver = PodmanComputeDriver::for_tests(PodmanComputeConfig {
+            allow_driver_config: true,
+            resource_admission: openshell_core::resource_admission::ResourceAdmissionConfig {
+                enabled: false,
+                ..Default::default()
+            },
+            ..PodmanComputeConfig::default()
+        });
+        let mut sandbox = plain_sandbox("sandbox-id", "sandbox-name");
+        sandbox.spec.as_mut().unwrap().template = Some(DriverSandboxTemplate {
+            driver_config: Some(
+                openshell_core::proto_struct::json_object_to_struct(
+                    serde_json::json!({"hypervisor_device": "kvm"})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                )
+                .unwrap(),
+            ),
+            ..Default::default()
+        });
+
+        let error = driver
+            .validate_sandbox_create(&sandbox)
+            .await
+            .expect_err("Hyperlight device requests require explicit operator approval");
+
+        assert!(
+            error
+                .to_string()
+                .contains("enable_hypervisor_device = true")
         );
     }
 

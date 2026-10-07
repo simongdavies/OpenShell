@@ -3277,6 +3277,7 @@ mod linux {
         Tcp {
             listener: std::net::TcpListener,
             server_config: Arc<rustls::ServerConfig>,
+            reject_local_ingress: bool,
         },
     }
 
@@ -3311,15 +3312,21 @@ mod linux {
                     Ok(Self::Tcp {
                         listener,
                         server_config,
+                        // Production configuration rejects loopback bind
+                        // addresses. Tests bind loopback directly and retain
+                        // ordinary TLS behavior.
+                        reject_local_ingress: !address.ip().is_loopback(),
                     })
                 }
             }
         }
 
-        /// Bind the TCP control listener, dropping loopback-interface ingress
-        /// before it listens so workload sockets cannot reach it through
-        /// loopback or the pod's own address. Configuration rejects loopback
-        /// addresses; tests bind them without the filter.
+        /// Bind the TCP control listener.
+        ///
+        /// Production listeners reject loopback and self-address peers
+        /// immediately after `accept`, before TLS or handshake permits. This
+        /// remains capability-free on kernels that restrict TCP
+        /// `SO_ATTACH_FILTER` to `CAP_NET_ADMIN`.
         fn bind_tcp(address: std::net::SocketAddr) -> io::Result<std::net::TcpListener> {
             let socket = socket2::Socket::new(
                 socket2::Domain::for_address(address),
@@ -3328,11 +3335,6 @@ mod linux {
             )?;
             socket.set_cloexec(true)?;
             socket.set_reuse_address(true)?;
-            if !address.ip().is_loopback() {
-                openshell_isolation_interface::linux::socket_confinement::reject_loopback_ingress(
-                    &socket,
-                )?;
-            }
             socket.bind(&address.into())?;
             socket.listen(128)?;
             Ok(socket.into())
@@ -3428,8 +3430,12 @@ mod linux {
                 Self::Tcp {
                     listener,
                     server_config,
+                    reject_local_ingress,
                 } => {
-                    let (stream, _) = listener.accept()?;
+                    let (stream, peer) = listener.accept()?;
+                    if *reject_local_ingress {
+                        reject_local_tcp_peer(&stream, peer)?;
+                    }
                     if let Err(error) = stream.set_nodelay(true) {
                         tracing::debug!(%error, "Failed to set boundary TCP_NODELAY");
                     }
@@ -3440,6 +3446,21 @@ mod linux {
                 }
             }
         }
+    }
+
+    fn reject_local_tcp_peer(
+        stream: &std::net::TcpStream,
+        peer: std::net::SocketAddr,
+    ) -> io::Result<()> {
+        let peer_ip = peer.ip().to_canonical();
+        let local_ip = stream.local_addr()?.ip().to_canonical();
+        if peer_ip.is_loopback() || peer_ip == local_ip {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "workload-local boundary TCP connection rejected",
+            ));
+        }
+        Ok(())
     }
 
     fn reject_workload_unix_peer(stream: &std::os::unix::net::UnixStream) -> io::Result<()> {
@@ -5150,19 +5171,52 @@ mod linux {
                 .tcp_local_addr()
                 .expect("TLS listener address")
                 .port();
-            // Loopback and the host's own address both arrive on `lo`; the
-            // dropped SYN never completes a handshake.
-            let result = std::net::TcpStream::connect_timeout(
+            // The TCP connection may enter the accept queue, but the boundary
+            // rejects it before allocating TLS or authenticated-session state.
+            let client = std::net::TcpStream::connect_timeout(
                 &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
                 Duration::from_millis(300),
-            );
-            assert!(
-                result.is_err(),
-                "loopback client reached the control listener"
-            );
+            )
+            .expect("connect loopback client");
+            drop(client);
             assert!(matches!(
                 listener.accept().map(|_| ()),
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock
+                Err(error) if error.kind() == io::ErrorKind::PermissionDenied
+            ));
+        }
+
+        fn local_non_loopback_address() -> Option<std::net::IpAddr> {
+            let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+            socket.connect("192.0.2.1:9").ok()?;
+            let address = socket.local_addr().ok()?.ip().to_canonical();
+            (!address.is_loopback() && !address.is_unspecified()).then_some(address)
+        }
+
+        #[test]
+        fn pod_control_listener_rejects_own_non_loopback_address() {
+            let Some(address) = local_non_loopback_address() else {
+                return;
+            };
+            let directory = tempfile::tempdir().expect("temporary directory");
+            let (server_tls, _client_tls) = stage_test_tls(directory.path(), "self");
+            let listener = ControlListener::bind(&BoundaryListenerConfig::TlsTcp {
+                address: "0.0.0.0:0".parse().expect("valid address"),
+                tls: server_tls,
+            })
+            .expect("bind TLS listener");
+            let port = listener
+                .tcp_local_addr()
+                .expect("TLS listener address")
+                .port();
+            let client = std::net::TcpStream::connect_timeout(
+                &std::net::SocketAddr::new(address, port),
+                Duration::from_millis(300),
+            )
+            .expect("connect self-address client");
+            drop(client);
+            assert!(matches!(
+                listener.accept().map(|_| ()),
+                Err(error) if error.kind() == io::ErrorKind::PermissionDenied
             ));
         }
 

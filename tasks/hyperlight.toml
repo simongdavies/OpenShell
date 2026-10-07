@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+["example:hyperlight:test"]
+description = "Run static tests for the OpenShell Hyperlight policy example"
+run = "uv run --no-project --with pytest --with pyyaml pytest examples/hyperlight-policy-demo/demo_test.py"
+
+["example:hyperlight:kvm"]
+description = "Run the OpenShell Hyperlight policy example on kind/KVM"
+run = "bash examples/hyperlight-policy-demo/demo.sh"
+run_windows = "echo ERROR: example:hyperlight:kvm requires x86-64 Linux with /dev/kvm.; exit 2"
+
+["example:hyperlight:local"]
+description = "Run the OpenShell Hyperlight policy example with local Docker/KVM"
+run = "bash examples/hyperlight-policy-demo/local-demo.sh"
+run_windows = "echo ERROR: example:hyperlight:local requires x86-64 Linux with /dev/kvm.; exit 2"

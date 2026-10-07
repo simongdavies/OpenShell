@@ -20,6 +20,7 @@ depends = [
   "test:codex-security-release-range",
   "test:docs-website",
   "test:docs-nav",
+  "example:hyperlight:test",
 ]
 
 ["test:docs-website"]

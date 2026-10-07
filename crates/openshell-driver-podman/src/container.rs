@@ -6,6 +6,7 @@
 use crate::config::PodmanComputeConfig;
 use openshell_core::ComputeDriverError;
 use openshell_core::driver_mounts::SelinuxLabel;
+use openshell_core::driver_utils::HypervisorDevice;
 #[cfg(test)]
 use openshell_core::gpu::{driver_gpu_requirements, validate_specific_gpu_device_request};
 use openshell_core::proto::compute::v1::{DriverSandbox, DriverSandboxTemplate};
@@ -79,6 +80,7 @@ pub struct PodmanSandboxDriverConfig {
         deserialize_with = "deserialize_optional_non_empty_string_list"
     )]
     pub cdi_devices: Option<Vec<String>>,
+    pub hypervisor_device: Option<HypervisorDevice>,
     mounts: Vec<PodmanDriverMountConfig>,
 }
 
@@ -1124,6 +1126,7 @@ fn build_base_spec(
             .unwrap_or_default(),
     );
     let resource_limits = build_resource_limits(sandbox, config);
+    let driver_config = PodmanSandboxDriverConfig::from_sandbox(sandbox)?;
     let user_mounts = podman_user_mounts(sandbox, config.enable_bind_mounts)
         .map_err(ComputeDriverError::InvalidArgument)?;
     if sandbox
@@ -1136,13 +1139,19 @@ fn build_base_spec(
             "podman sandbox token secret is required when sandbox token is set".to_string(),
         ));
     }
-    let devices = gpu_device_ids.map(|device_ids| {
-        device_ids
-            .iter()
-            .cloned()
-            .map(|path| LinuxDevice { path })
-            .collect()
-    });
+    let devices = gpu_device_ids
+        .into_iter()
+        .flatten()
+        .cloned()
+        .chain(
+            driver_config
+                .hypervisor_device
+                .map(HypervisorDevice::cdi_name)
+                .map(str::to_string),
+        )
+        .map(|path| LinuxDevice { path })
+        .collect::<Vec<_>>();
+    let devices = (!devices.is_empty()).then_some(devices);
 
     // The isolation roles override this base network configuration below.
     #[allow(clippy::zero_sized_map_values)]
@@ -2105,6 +2114,35 @@ mod tests {
         let spec = build_container_spec(&sandbox, &config);
 
         assert!(spec.get("devices").is_none());
+    }
+
+    #[test]
+    fn container_spec_maps_fixed_hypervisor_cdi_device() {
+        use openshell_core::proto::compute::v1::DriverSandboxSpec;
+
+        let mut sandbox = test_sandbox("test-id", "test-name");
+        sandbox.spec = Some(DriverSandboxSpec {
+            template: Some(DriverSandboxTemplate {
+                driver_config: Some(
+                    proto_struct::json_object_to_struct(
+                        serde_json::json!({"hypervisor_device": "kvm"})
+                            .as_object()
+                            .unwrap()
+                            .clone(),
+                    )
+                    .unwrap(),
+                ),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        let spec = build_container_spec(&sandbox, &test_config());
+
+        assert_eq!(
+            spec["devices"],
+            serde_json::json!([{ "path": "hyperlight.dev/hypervisor=kvm" }])
+        );
     }
 
     #[test]

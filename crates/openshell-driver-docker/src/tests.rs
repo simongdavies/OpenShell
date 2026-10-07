@@ -49,6 +49,50 @@ fn startup_error_log_tails_fit_grpc_header_budget() {
     assert!(format_log_tail("").is_empty());
 }
 
+#[test]
+fn validate_sandbox_rejects_hypervisor_device_without_operator_opt_in() {
+    let config = runtime_config();
+    let mut sandbox = test_sandbox();
+    sandbox
+        .spec
+        .as_mut()
+        .unwrap()
+        .template
+        .as_mut()
+        .unwrap()
+        .driver_config = Some(string_driver_config("hypervisor_device", "kvm"));
+
+    let error = DockerComputeDriver::validate_sandbox(&sandbox, &config).unwrap_err();
+
+    assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+    assert!(error.message().contains("enable_hypervisor_device = true"));
+}
+
+#[test]
+fn build_container_create_body_maps_fixed_hypervisor_cdi_device() {
+    let mut config = runtime_config();
+    config.enable_hypervisor_device = true;
+    let mut sandbox = test_sandbox();
+    sandbox
+        .spec
+        .as_mut()
+        .unwrap()
+        .template
+        .as_mut()
+        .unwrap()
+        .driver_config = Some(string_driver_config("hypervisor_device", "kvm"));
+
+    let create_body = build_container_create_body(&sandbox, &config).unwrap();
+
+    assert_eq!(
+        create_body
+            .host_config
+            .and_then(|config| config.device_requests)
+            .and_then(|requests| requests[0].device_ids.clone()),
+        Some(vec!["hyperlight.dev/hypervisor=kvm".to_string()])
+    );
+}
+
 fn test_launch_authentication() -> Vec<u8> {
     serde_json::to_vec(&SandboxLaunchAuthentication {
         supervisor: SupervisorAuthBundle {
@@ -165,6 +209,18 @@ fn cdi_device_typo_config(device_ids: &[&str]) -> prost_types::Struct {
     list_string_driver_config("cdi_device", device_ids)
 }
 
+fn string_driver_config(field: &str, value: &str) -> prost_types::Struct {
+    prost_types::Struct {
+        fields: std::iter::once((
+            field.to_string(),
+            prost_types::Value {
+                kind: Some(prost_types::value::Kind::StringValue(value.to_string())),
+            },
+        ))
+        .collect(),
+    }
+}
+
 fn list_string_driver_config(field: &str, values: &[&str]) -> prost_types::Struct {
     prost_types::Struct {
         fields: std::iter::once((
@@ -221,6 +277,7 @@ fn runtime_config() -> DockerDriverRuntimeConfig {
         },
         sandbox_pids_limit: openshell_core::config::default_sandbox_pids_limit(),
         enable_bind_mounts: false,
+        enable_hypervisor_device: false,
         upstream_proxy: UpstreamProxyConfig::default(),
         proxy_ca_bundle: None,
         provider_spiffe_workload_api_socket: None,

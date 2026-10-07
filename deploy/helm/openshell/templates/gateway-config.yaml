@@ -176,6 +176,7 @@ data:
 
     [openshell.drivers.kubernetes]
     allow_driver_config          = {{ .Values.server.drivers.kubernetes.allowDriverConfig }}
+    allowed_extended_resources   = {{ .Values.server.drivers.kubernetes.allowedExtendedResources | toJson }}
     namespace                    = {{ include "openshell.sandboxNamespace" . | quote }}
     default_image                = {{ include "openshell.sandboxImage" . | quote }}
     {{- if include "openshell.sandboxRuntimeImageOverrideEnabled" . }}

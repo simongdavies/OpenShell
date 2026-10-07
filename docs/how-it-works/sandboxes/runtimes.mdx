@@ -100,6 +100,26 @@ To pin specific GPUs, pass `cdi_devices` for Docker or Podman, or `gpu_device_id
 --gpu --driver-config-json '{"vm":{"gpu_device_ids":["0000:2d:00.0"]}}'
 ```
 
+Kubernetes driver config can request an operator-installed extended resource.
+Resource admission rejects qualified resource names unless the gateway operator
+adds the exact name to `allowed_extended_resources`:
+
+```toml
+[openshell.drivers.kubernetes]
+allow_driver_config = true
+allowed_extended_resources = ["hyperlight.dev/hypervisor"]
+```
+
+```shell
+openshell sandbox create \
+  --driver-config-json '{"kubernetes":{"pod":{"node_selector":{"hyperlight.dev/hypervisor":"kvm"}},"containers":{"agent":{"resources":{"limits":{"hyperlight.dev/hypervisor":"1"}}}}}}' \
+  -- your-command
+```
+
+The allowlist approves only the resource request. The cluster operator remains
+responsible for installing and securing the device plugin or scheduler
+extension that implements it.
+
 ## Docker Driver
 
 [Docker](https://www.docker.com/get-started/) runs sandboxes as containers on the gateway host. Docker is also required to build sandbox images from local directories or Dockerfiles.
@@ -115,6 +135,28 @@ socket_path = "/var/run/docker.sock"
 Common options in `[openshell.drivers.docker]` are `socket_path`, `grpc_endpoint`, `sandbox_runtime_image`, `supervisor_image`, `image_pull_policy`, and `sandbox_pids_limit`. When `socket_path` is unset, the driver uses the socket found by auto-detection.
 
 Docker Desktop must have host networking enabled, and it cannot use Enhanced Container Isolation. Set `grpc_endpoint` when sandboxes cannot reach the gateway on host loopback. For GPU sandboxes, configure Docker CDI before starting the gateway.
+
+### Docker Hyperlight Device
+
+An operator can enable a fixed Hyperlight CDI allocation:
+
+```toml
+[openshell.drivers.docker]
+allow_driver_config = true
+enable_hypervisor_device = true
+```
+
+```shell
+openshell sandbox create \
+  --driver-config-json '{"docker":{"hypervisor_device":"kvm"}}' \
+  -- your-command
+```
+
+The accepted values are `kvm` and `mshv`, which resolve only to
+`hyperlight.dev/hypervisor=kvm` and
+`hyperlight.dev/hypervisor=mshv`. OpenShell does not accept an arbitrary
+device path. The Docker daemon must already have the corresponding CDI
+specification.
 
 ### Docker Corporate Proxy Egress
 
@@ -175,6 +217,10 @@ Mount targets cannot replace the workspace root, the container root, or OpenShel
 ## Podman Driver
 
 [Podman](https://podman.io/) runs sandboxes as rootless containers on the gateway host. It requires Podman 5.x, cgroups v2, and an active Podman user socket:
+
+Podman supports the same operator gate and fixed values under
+`[openshell.drivers.podman]` and
+`driver_config.podman.hypervisor_device`.
 
 ```shell
 systemctl --user start podman.socket

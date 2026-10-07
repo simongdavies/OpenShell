@@ -28,6 +28,13 @@ struct Args {
         default_value = "{}"
     )]
     admission_config_json: openshell_core::resource_admission::DriverAdmissionConfig,
+    /// Exact Kubernetes extended resources caller driver config may request.
+    #[arg(
+        long,
+        env = "OPENSHELL_ALLOWED_EXTENDED_RESOURCES",
+        value_delimiter = ','
+    )]
+    allowed_extended_resources: Vec<String>,
     /// Public compute-driver Unix socket used by an external gateway.
     #[arg(long, env = "OPENSHELL_COMPUTE_DRIVER_SOCKET")]
     bind_socket: Option<PathBuf>,
@@ -240,6 +247,7 @@ async fn main() -> Result<()> {
         KubernetesComputeConfig {
             allow_driver_config: args.admission_config_json.allow_driver_config,
             resource_admission: args.admission_config_json.resource_admission.clone(),
+            allowed_extended_resources: args.allowed_extended_resources.into_iter().collect(),
             workspace_mode: args.workspace_mode,
             gateway_id: args.gateway_id,
             namespace: args.sandbox_namespace,

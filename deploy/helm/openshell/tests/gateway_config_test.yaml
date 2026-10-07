@@ -712,6 +712,16 @@ tests:
           path: data["gateway.toml"]
           pattern: '(?ms)\[openshell\.drivers\.kubernetes\].*?image_pull_secrets\s*=\s*\["regcred", "backup-regcred"\]'
 
+  - it: renders operator-approved extended resources
+    template: templates/gateway-config.yaml
+    set:
+      server.drivers.kubernetes.allowedExtendedResources:
+        - hyperlight.dev/hypervisor
+    asserts:
+      - matchRegex:
+          path: data["gateway.toml"]
+          pattern: 'allowed_extended_resources\s*=\s*\["hyperlight.dev/hypervisor"\]'
+
   - it: does not reuse gateway image pull secrets for sandbox pods
     template: templates/gateway-config.yaml
     set:

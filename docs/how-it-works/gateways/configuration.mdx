@@ -682,7 +682,9 @@ and projected token volumes are prohibited.
 GPU device attachments are temporarily exempt from label admission. Existing
 GPU validation still applies. Explicit GPU device settings inside driver JSON
 still require `allow_driver_config = true`; public GPU-count requests do not.
-The exception does not approve unrelated host mounts or non-GPU devices.
+Kubernetes extended resources other than `nvidia.com/gpu` require an exact
+operator entry in `allowed_extended_resources`. The exception does not approve
+unrelated host mounts or arbitrary resource names.
 
 Raw host bind mounts and supplemental image mounts have no trusted label
 resolver and are rejected while admission is enabled. Publisher image labels
@@ -771,6 +773,10 @@ client_ca_path = "/etc/openshell-tls/client-ca/ca.crt"
 # external_server_names = ["gateway.example.com"]
 
 [openshell.drivers.kubernetes]
+allow_driver_config            = false
+# Exact qualified resources that caller Kubernetes driver config may request.
+# The built-in typed GPU path continues to permit nvidia.com/gpu.
+allowed_extended_resources     = ["hyperlight.dev/hypervisor"]
 # Workspace isolation mode. "shared" renders all sandboxes into a single
 # namespace. "managed" auto-creates a K8s namespace per workspace
 # (openshell-{gateway_id}-{workspace}). "operator" maps each workspace to a
@@ -962,6 +968,8 @@ grpc_endpoint      = "https://127.0.0.1:17670"
 # bind-backed volumes, expose gateway-host paths inside sandboxes and can
 # negate OpenShell isolation and filesystem controls.
 enable_bind_mounts = false
+# Allow caller driver config to select the fixed Hyperlight CDI device.
+enable_hypervisor_device = false
 # Omit to use OpenShell's 2048-process default. Explicit 0 is invalid.
 sandbox_pids_limit = 2048
 # Explicit supervisor-compatible default. RuntimeDefault requires Docker to
@@ -1056,6 +1064,8 @@ stop_timeout_secs       = 45
 # bind-backed volumes, expose gateway-host paths inside sandboxes and can
 # negate OpenShell isolation and filesystem controls.
 enable_bind_mounts      = false
+# Allow caller driver config to select the fixed Hyperlight CDI device.
+enable_hypervisor_device = false
 # Omit to use OpenShell's 2048-process default. Explicit 0 is invalid.
 sandbox_pids_limit      = 2048
 # Health check interval in seconds. Omit to disable health checks; explicit 0

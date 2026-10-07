@@ -25,6 +25,7 @@ use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use openshell_core::config::DEFAULT_STOP_TIMEOUT_SECS;
 use openshell_core::driver_mounts;
+use openshell_core::driver_utils::HypervisorDevice;
 use openshell_core::driver_utils::{
     CONDITION_EXITED, CONDITION_RUNTIME_RESTART, LABEL_MANAGED_BY, LABEL_MANAGED_BY_VALUE,
     LABEL_SANDBOX_ID, LABEL_SANDBOX_NAME, LABEL_SANDBOX_NAMESPACE, LABEL_SANDBOX_WORKSPACE,
@@ -224,6 +225,10 @@ pub struct DockerComputeConfig {
     #[serde(default)]
     pub enable_bind_mounts: bool,
 
+    /// Allow sandbox requests to select the fixed Hyperlight CDI device.
+    #[serde(default)]
+    pub enable_hypervisor_device: bool,
+
     /// Corporate forward-proxy settings supplied to the supervisor.
     #[serde(flatten)]
     pub upstream_proxy: UpstreamProxyConfig,
@@ -291,6 +296,7 @@ impl Default for DockerComputeConfig {
             ssh_socket_path: openshell_core::container_paths::SSH_SOCKET_PATH.to_string(),
             sandbox_pids_limit: openshell_core::config::default_sandbox_pids_limit(),
             enable_bind_mounts: false,
+            enable_hypervisor_device: false,
             upstream_proxy: UpstreamProxyConfig::default(),
             proxy_ca_bundle: None,
             provider_spiffe_workload_api_socket: None,
@@ -322,6 +328,7 @@ struct DockerDriverRuntimeConfig {
     gpu: DockerGpuRuntimeCapabilities,
     sandbox_pids_limit: Option<std::num::NonZeroI64>,
     enable_bind_mounts: bool,
+    enable_hypervisor_device: bool,
     upstream_proxy: UpstreamProxyConfig,
     proxy_ca_bundle: Option<PathBuf>,
     provider_spiffe_workload_api_socket: Option<PathBuf>,
@@ -723,6 +730,7 @@ struct DockerSandboxDriverConfig {
         deserialize_with = "deserialize_optional_non_empty_string_list"
     )]
     cdi_devices: Option<Vec<String>>,
+    hypervisor_device: Option<HypervisorDevice>,
     mounts: Vec<DockerDriverMountConfig>,
 }
 
@@ -952,6 +960,7 @@ impl DockerComputeDriver {
                 gpu,
                 sandbox_pids_limit: docker_config.sandbox_pids_limit,
                 enable_bind_mounts: docker_config.enable_bind_mounts,
+                enable_hypervisor_device: docker_config.enable_hypervisor_device,
                 allow_driver_config: docker_config.allow_driver_config,
                 resource_admission: docker_config.resource_admission.clone(),
                 upstream_proxy: docker_config.upstream_proxy.clone(),
@@ -1056,6 +1065,11 @@ impl DockerComputeDriver {
         let driver_config =
             DockerSandboxDriverConfig::from_template(template).map_err(Status::invalid_argument)?;
         validate_docker_driver_mounts(&driver_config.mounts, config.enable_bind_mounts)?;
+        if driver_config.hypervisor_device.is_some() && !config.enable_hypervisor_device {
+            return Err(Status::failed_precondition(
+                "docker Hyperlight device access requires enable_hypervisor_device = true in gateway configuration",
+            ));
+        }
         for mount in &driver_config.mounts {
             if matches!(
                 mount,
@@ -5726,10 +5740,21 @@ fn build_container_create_body_for_image(
         ..Default::default()
     });
     let user_bind_strings = docker_driver_bind_strings(driver_config)?;
-    let device_requests = gpu_device_ids.map(|device_ids| {
+    let device_ids = gpu_device_ids
+        .into_iter()
+        .flatten()
+        .cloned()
+        .chain(
+            driver_config
+                .hypervisor_device
+                .map(HypervisorDevice::cdi_name)
+                .map(str::to_string),
+        )
+        .collect::<Vec<_>>();
+    let device_requests = (!device_ids.is_empty()).then(|| {
         vec![DeviceRequest {
             driver: Some("cdi".to_string()),
-            device_ids: Some(device_ids.to_vec()),
+            device_ids: Some(device_ids),
             ..Default::default()
         }]
     });

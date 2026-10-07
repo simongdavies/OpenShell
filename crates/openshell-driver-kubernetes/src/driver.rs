@@ -1660,11 +1660,17 @@ impl KubernetesComputeDriver {
             &namespace,
             &rendered["spec"]["podTemplate"]["spec"],
             params.sandbox_secret_name,
+            &self.config.allowed_extended_resources,
         )
         .await
     }
 
     async fn admit_stored_resources(&self, object: &DynamicObject) -> Result<(), tonic::Status> {
+        let spec = &object.data["spec"]["podTemplate"]["spec"];
+        crate::resource_admission::validate_extended_resources(
+            spec,
+            &self.config.allowed_extended_resources,
+        )?;
         if self.config.allow_driver_config && !self.config.resource_admission.enabled {
             return Ok(());
         }
@@ -1689,7 +1695,6 @@ impl KubernetesComputeDriver {
             .as_deref()
             .ok_or_else(|| tonic::Status::failed_precondition("sandbox lacks namespace"))?;
         sandbox_id_from_object(object).map_err(tonic::Status::failed_precondition)?;
-        let spec = &object.data["spec"]["podTemplate"]["spec"];
         let private_secret = sandbox_bootstrap_secret_name(spec).ok_or_else(|| {
             tonic::Status::failed_precondition(
                 "sandbox pod template is missing its bootstrap Secret volume",
@@ -1702,6 +1707,7 @@ impl KubernetesComputeDriver {
             namespace,
             spec,
             private_secret,
+            &self.config.allowed_extended_resources,
         )
         .await?;
         if actual != expected {
@@ -7525,6 +7531,48 @@ mod tests {
             .admit_stored_resources(&sandbox)
             .await
             .expect("stopped sandbox should use its stored private Secret reference");
+    }
+
+    #[tokio::test]
+    async fn stored_extended_resources_are_revalidated_when_label_admission_is_disabled() {
+        let driver = KubernetesComputeDriver::new_for_test(KubernetesComputeConfig {
+            allow_driver_config: true,
+            resource_admission: openshell_core::resource_admission::ResourceAdmissionConfig {
+                enabled: false,
+                ..Default::default()
+            },
+            ..KubernetesComputeConfig::default()
+        });
+        let resource = ApiResource::from_gvk(&GroupVersionKind::gvk(
+            SANDBOX_GROUP,
+            SANDBOX_VERSION_V1BETA1,
+            SANDBOX_KIND,
+        ));
+        let mut sandbox = DynamicObject::new("stored-sandbox", &resource);
+        sandbox.data = serde_json::json!({
+            "spec": {
+                "podTemplate": {
+                    "spec": {
+                        "containers": [{
+                            "resources": {
+                                "limits": {"hyperlight.dev/hypervisor": "1"}
+                            }
+                        }]
+                    }
+                }
+            }
+        });
+
+        let error = driver
+            .admit_stored_resources(&sandbox)
+            .await
+            .expect_err("stored extended resources must remain allowlisted");
+
+        assert!(
+            error
+                .message()
+                .contains("not in allowed_extended_resources")
+        );
     }
 
     #[tokio::test]

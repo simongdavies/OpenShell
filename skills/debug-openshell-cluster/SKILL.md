@@ -103,12 +103,21 @@ missing resource approval. Helm defaults `server.drivers.kubernetes.allowDriverC
 to false and `resourceAdmission.enabled` to true. Existing PVCs, RuntimeClasses,
 and PriorityClasses need matching administrator-owned labels; namespace
 membership and read-only access do not grant approval. GPU devices and
-operator-selected image-pull Secrets do not need admission labels. In managed
+operator-selected image-pull Secrets do not need admission labels. Kubernetes
+extended resources other than `nvidia.com/gpu` require an exact
+`server.drivers.kubernetes.allowedExtendedResources` entry; do not disable
+admission to make a device-plugin request pass. In managed
 mode, inspect the configured source image-pull Secret in the gateway namespace
 and the generation copies (`openshell.ai/component=image-pull`) in the workspace
 namespace. Legacy workloads without
 admission provenance need recreation. Do not
 automatically label control-plane resources or disable enforcement as a repair.
+
+For local Hyperlight workloads, Docker and Podman require both the operator
+setting `enable_hypervisor_device = true` and caller driver config selecting
+`hypervisor_device = "kvm"` or `"mshv"`. Verify the corresponding
+`hyperlight.dev/hypervisor=<name>` CDI device exists; OpenShell never accepts a
+raw device path.
 
 For out-of-tree compute drivers, also check that their versioned admission-policy
 acknowledgement matches the gateway's policy. Configure standalone driver policy

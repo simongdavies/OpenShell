@@ -73,7 +73,9 @@ Resource admission defaults to enabled and caller driver config to disabled.
 Driver-config scenarios need an explicit `allowDriverConfig` opt-in; external
 attachments also need administrator-controlled approval labels in the target
 namespace. GPU attachments and operator-selected image-pull Secrets are exempt
-from labels. Managed workspace image-pull Secrets are copied from the configured
+from labels. Other Kubernetes extended resources require an exact
+`allowedExtendedResources` entry in the chart values; keep resource admission
+enabled. Managed workspace image-pull Secrets are copied from the configured
 source in the gateway namespace; do not grant approval to the gateway database
 PVC or disable admission to make tests pass.
 

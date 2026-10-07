@@ -7,6 +7,36 @@ use std::path::{Path, PathBuf};
 
 use crate::proto::compute::v1::DriverSandbox;
 
+/// Fixed Hyperlight hypervisor devices supported by container compute drivers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HypervisorDevice {
+    /// Linux KVM device exposed through CDI.
+    Kvm,
+    /// Microsoft Hypervisor device exposed through CDI.
+    Mshv,
+}
+
+impl HypervisorDevice {
+    /// CDI-qualified device name installed by Hyperlight's device integration.
+    #[must_use]
+    pub const fn cdi_name(self) -> &'static str {
+        match self {
+            Self::Kvm => "hyperlight.dev/hypervisor=kvm",
+            Self::Mshv => "hyperlight.dev/hypervisor=mshv",
+        }
+    }
+
+    /// Fixed host device represented by this allocation.
+    #[must_use]
+    pub const fn path(self) -> &'static str {
+        match self {
+            Self::Kvm => "/dev/kvm",
+            Self::Mshv => "/dev/mshv",
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Sandbox container/pod label keys (openshell.ai/ namespace)
 // ---------------------------------------------------------------------------
